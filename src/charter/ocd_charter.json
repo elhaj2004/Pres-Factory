@@ -1,0 +1,159 @@
+{
+  "brand_name": "Orange Cyberdefense",
+  "colors": {
+    "primary_orange": "#FF6600",
+    "black": "#000000",
+    "dark_grey": "#333333",
+    "medium_grey": "#666666",
+    "light_grey": "#F2F2F2",
+    "white": "#FFFFFF",
+    "table_header_bg": "#FF6600",
+    "table_header_text": "#FFFFFF",
+    "table_row_odd": "#FFFFFF",
+    "table_row_even": "#FFF3E0"
+  },
+  "fonts": {
+    "primary": "Source Sans Pro",
+    "fallback": ["Calibri", "Arial", "Helvetica Neue"]
+  },
+  "docx": {
+    "page_margins_cm": {
+      "top": 2.54,
+      "bottom": 2.54,
+      "left": 2.54,
+      "right": 2.54
+    },
+    "styles": {
+      "heading_1": {
+        "font_name": "Source Sans Pro",
+        "font_size": 18,
+        "bold": true,
+        "italic": false,
+        "color": "#FF6600",
+        "alignment": "left",
+        "space_before": 12,
+        "space_after": 6
+      },
+      "heading_2": {
+        "font_name": "Source Sans Pro",
+        "font_size": 14,
+        "bold": true,
+        "italic": false,
+        "color": "#FF6600",
+        "alignment": "left",
+        "space_before": 10,
+        "space_after": 4
+      },
+      "heading_3": {
+        "font_name": "Source Sans Pro",
+        "font_size": 12,
+        "bold": true,
+        "italic": false,
+        "color": "#000000",
+        "alignment": "left",
+        "space_before": 8,
+        "space_after": 4
+      },
+      "body": {
+        "font_name": "Source Sans Pro",
+        "font_size": 11,
+        "bold": false,
+        "italic": false,
+        "color": "#000000",
+        "alignment": "left",
+        "space_before": 0,
+        "space_after": 6
+      },
+      "bullet": {
+        "font_name": "Source Sans Pro",
+        "font_size": 11,
+        "bold": false,
+        "italic": false,
+        "color": "#000000",
+        "alignment": "left",
+        "space_before": 0,
+        "space_after": 3
+      },
+      "table_header": {
+        "font_name": "Source Sans Pro",
+        "font_size": 11,
+        "bold": true,
+        "italic": false,
+        "color": "#FFFFFF",
+        "background": "#FF6600"
+      },
+      "table_body": {
+        "font_name": "Source Sans Pro",
+        "font_size": 10,
+        "bold": false,
+        "italic": false,
+        "color": "#000000"
+      },
+      "caption": {
+        "font_name": "Source Sans Pro",
+        "font_size": 9,
+        "bold": false,
+        "italic": true,
+        "color": "#666666",
+        "alignment": "center"
+      }
+    }
+  },
+  "pptx": {
+    "slide_width_cm": 33.87,
+    "slide_height_cm": 19.05,
+    "background_color": "#FFFFFF",
+    "styles": {
+      "title": {
+        "font_name": "Source Sans Pro",
+        "font_size": 28,
+        "bold": true,
+        "italic": false,
+        "color": "#FF6600"
+      },
+      "subtitle": {
+        "font_name": "Source Sans Pro",
+        "font_size": 20,
+        "bold": false,
+        "italic": false,
+        "color": "#000000"
+      },
+      "heading": {
+        "font_name": "Source Sans Pro",
+        "font_size": 18,
+        "bold": true,
+        "italic": false,
+        "color": "#FF6600"
+      },
+      "body": {
+        "font_name": "Source Sans Pro",
+        "font_size": 14,
+        "bold": false,
+        "italic": false,
+        "color": "#000000"
+      },
+      "bullet_level_1": {
+        "font_name": "Source Sans Pro",
+        "font_size": 14,
+        "bold": false,
+        "italic": false,
+        "color": "#000000"
+      },
+      "bullet_level_2": {
+        "font_name": "Source Sans Pro",
+        "font_size": 12,
+        "bold": false,
+        "italic": false,
+        "color": "#333333"
+      },
+      "caption": {
+        "font_name": "Source Sans Pro",
+        "font_size": 10,
+        "bold": false,
+        "italic": true,
+        "color": "#666666"
+      }
+    }
+  },
+  "_note": "Mettre à jour ce fichier avec les spécifications exactes de la charte OCD fournie par le département Communication."
+}
