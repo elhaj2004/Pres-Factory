@@ -55,6 +55,7 @@ def _initial_state(file_path: str) -> dict:
         "document_title": None,
         "similar_examples": [],
         "primary_reference_deck": None,
+        "brand_context": None,
         "style_map": [],
         "output_path": None,
         "quality_score": None,

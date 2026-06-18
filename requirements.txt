@@ -13,3 +13,4 @@ docx2txt>=0.8
 sentence-transformers>=2.2.0
 requests>=2.31.0
 msal>=1.30.0
+pypdf>=6.13.0

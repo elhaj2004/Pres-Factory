@@ -7,6 +7,11 @@ from pptx import Presentation
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 from src.graph import create_graph
 
 
@@ -20,6 +25,7 @@ def _initial_state(file_path: str) -> dict:
         "document_title": None,
         "similar_examples": [],
         "primary_reference_deck": None,
+        "brand_context": None,
         "style_map": [],
         "output_path": None,
         "quality_score": None,
@@ -123,6 +129,17 @@ def _compare_deck_text_similarity(output_path: str, reference_path: str) -> dict
     }
 
 
+def _extract_output_text(file_path: str) -> list[str]:
+    prs = Presentation(file_path)
+    lines: list[str] = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            text = getattr(shape, "text", "")
+            if isinstance(text, str) and text.strip():
+                lines.append(" ".join(text.split()))
+    return lines
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("Usage: python scripts/run_validation.py <file_path>")
@@ -159,6 +176,7 @@ def main() -> int:
             "raw_element_count": len(last.get("raw_elements") or []),
             "similar_examples_count": len(last.get("similar_examples") or []),
             "primary_reference_deck": last.get("primary_reference_deck"),
+            "brand_context": last.get("brand_context"),
             "pptx_style_sample": _collect_pptx_style_sample(output_path) if output_path and output_path.lower().endswith(".pptx") else None,
             "pptx_structure": _collect_pptx_structure(output_path) if output_path and output_path.lower().endswith(".pptx") else None,
         }
@@ -167,6 +185,8 @@ def main() -> int:
                 output_path,
                 last["primary_reference_deck"]["path"],
             )
+        if output_path and output_path.lower().endswith(".pptx"):
+            result["output_text_sample"] = _extract_output_text(output_path)[:20]
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except Exception as exc:

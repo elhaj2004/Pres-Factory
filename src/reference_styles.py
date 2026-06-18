@@ -1,6 +1,8 @@
 from collections import Counter
 from typing import Any
 
+from src.brand_knowledge import get_brand_placeholder_style
+
 
 _ELEMENT_STYLE_FALLBACKS = {
     "docx": {
@@ -189,6 +191,14 @@ def build_style_from_profile(
         if locator_key in element:
             style[locator_key] = element[locator_key]
 
+    placeholder_type = element.get("placeholder_type")
+    if placeholder_type:
+        style["placeholder_type"] = placeholder_type
+        defaults = get_brand_placeholder_style(str(placeholder_type), "pptx")
+        for key, value in defaults.items():
+            if style.get(key) in (None, ""):
+                style[key] = value
+
     return style
 
 
@@ -251,12 +261,17 @@ def score_style_map_against_references(
     raw_elements: list[dict[str, Any]],
     file_type: str,
     reference_profiles: dict[str, dict[str, Any]],
+    brand_targets: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    brand_targets = brand_targets or {}
     if not reference_profiles:
         return {
             "score": 15,
             "compliant": False,
             "breakdown": {
+                "brandguide": 0,
+                "official_templates": 0,
+                "domain_references": 15,
                 "typography": 10,
                 "colors": 10,
                 "spacing": 20,
@@ -312,6 +327,9 @@ def score_style_map_against_references(
             "score": 25,
             "compliant": False,
             "breakdown": {
+                "brandguide": 25,
+                "official_templates": 25,
+                "domain_references": 25,
                 "typography": 25,
                 "colors": 25,
                 "spacing": 25,
@@ -322,9 +340,51 @@ def score_style_map_against_references(
         }
 
     breakdown = {key: round(value / count, 2) for key, value in totals.items()}
-    score = round(sum(breakdown.values()) / len(breakdown), 2)
+
+    preferred_fonts = set(brand_targets.get("preferred_fonts") or [])
+    allowed_colors = set(brand_targets.get("allowed_colors") or [])
+    preferred_placeholders = set(brand_targets.get("preferred_placeholders") or [])
+    preferred_sizes = set(brand_targets.get("preferred_sizes") or [])
+
+    style_count = max(len(style_map or []), 1)
+    brandguide_checks = 0
+    template_checks = 0
+    content_checks = 0
+
+    for style in style_map or []:
+        if not isinstance(style, dict):
+            continue
+        if preferred_fonts and style.get("font_name") in preferred_fonts:
+            brandguide_checks += 1
+        if allowed_colors and style.get("color") in allowed_colors:
+            brandguide_checks += 1
+        if preferred_sizes and style.get("font_size") in preferred_sizes:
+            template_checks += 1
+        if preferred_placeholders and style.get("element_type"):
+            content_checks += 1
+
+    brandguide_score = round(100.0 * brandguide_checks / max(style_count * 2, 1), 2)
+    official_template_score = round(100.0 * template_checks / max(style_count, 1), 2)
+    domain_reference_score = round(
+        (breakdown["typography"] + breakdown["colors"] + breakdown["spacing"] + breakdown["consistency"]) / 4,
+        2,
+    )
+
+    weighted_score = (
+        brandguide_score * 0.45
+        + official_template_score * 0.35
+        + domain_reference_score * 0.20
+    )
+    score = round(weighted_score, 2)
     issues: list[str] = []
     recommendations: list[str] = []
+
+    breakdown = {
+        "brandguide": brandguide_score,
+        "official_templates": official_template_score,
+        "domain_references": domain_reference_score,
+        **breakdown,
+    }
 
     if breakdown["typography"] < 90:
         issues.append("La typographie s'ecarte encore des styles extraits des documents de reference.")
@@ -338,9 +398,15 @@ def score_style_map_against_references(
     if breakdown["consistency"] < 95:
         issues.append("Certains elements n'ont pas ete rattaches au meilleur profil de reference disponible.")
         recommendations.append("Verifier le typing des elements (title, heading, body, bullet) et la selection RAG des references.")
+    if breakdown["brandguide"] < 80:
+        issues.append("La sortie respecte insuffisamment le brandguide Orange, qui doit rester prioritaire.")
+        recommendations.append("Renforcer l'alignement sur GuidelinesFR.pdf et les regles officielles de typographie/couleurs.")
+    if breakdown["official_templates"] < 80:
+        issues.append("La sortie n'est pas encore assez proche des templates officiels PPT-FR.")
+        recommendations.append("Verifier la selection des templates officiels et faire primer leurs layouts/styles sur les references metier.")
 
     if not issues:
-        issues.append("La mise en forme suit de facon coherente les profils extraits des documents de reference selectionnes.")
+        issues.append("La mise en forme suit de facon coherente le brandguide, les templates officiels et les references selectionnees.")
     if not recommendations:
         recommendations.append("Faire une validation visuelle rapide sur le document genere pour confirmer le rendu final.")
 

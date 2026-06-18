@@ -13,6 +13,7 @@ from pptx import Presentation
 from pptx.util import Pt as PptPt
 from pptx.dml.color import RGBColor as PptRGBColor
 
+from src.brand_knowledge import build_brand_quality_targets, get_brand_placeholder_style
 from src.reference_styles import resolve_table_profiles
 from src.state import PresFactoryState
 
@@ -148,6 +149,71 @@ def _render_from_reference_deck(reference_deck_path: str, elements: List[Dict[st
     prs.save(output_path)
 
 
+def _preserve_text_content_against_elements(prs: Presentation, elements: List[Dict[str, Any]]) -> None:
+    locator_to_text = {
+        (element.get("slide_idx"), element.get("shape_idx"), element.get("para_idx")): element.get("content", "")
+        for element in elements
+        if all(key in element for key in ("slide_idx", "shape_idx", "para_idx"))
+    }
+
+    for slide_idx, slide in enumerate(prs.slides):
+        for shape_idx, shape in enumerate(slide.shapes):
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            for para_idx, para in enumerate(shape.text_frame.paragraphs):
+                source_text = locator_to_text.get((slide_idx, shape_idx, para_idx))
+                if source_text is None:
+                    continue
+                current_text = para.text or ""
+                if current_text == source_text:
+                    continue
+                _replace_paragraph_text(para, source_text)
+
+
+def _replace_paragraph_text(para, new_text: str) -> None:
+    runs = list(para.runs)
+    if not runs:
+        run = para.add_run()
+        run.text = new_text
+        return
+    runs[0].text = new_text
+    for run in runs[1:]:
+        run.text = ""
+
+
+def _merge_with_brand_targets(style: Dict[str, Any], placeholder_type: str | None, brand_targets: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(style)
+    defaults = get_brand_placeholder_style(placeholder_type, "pptx")
+    for key, value in defaults.items():
+        if merged.get(key) in (None, ""):
+            merged[key] = value
+
+    if merged.get("bold") is None and defaults.get("bold") is not None:
+        merged["bold"] = defaults["bold"]
+    if merged.get("italic") is None and defaults.get("italic") is not None:
+        merged["italic"] = defaults["italic"]
+
+    return merged
+
+
+def _apply_brand_style_to_shape(shape, shape_style: Dict[str, Any], brand_targets: Dict[str, Any]) -> None:
+    if not getattr(shape, "has_text_frame", False):
+        return
+
+    placeholder_type = None
+    if getattr(shape, "is_placeholder", False):
+        try:
+            placeholder_type = str(shape.placeholder_format.type)
+        except Exception:
+            placeholder_type = "placeholder"
+
+    merged_style = _merge_with_brand_targets(shape_style, placeholder_type, brand_targets)
+    for para in shape.text_frame.paragraphs:
+        if not para.text.strip():
+            continue
+        _apply_pptx_para_style(para, merged_style)
+
+
 # ── DOCX ──────────────────────────────────────────────────────────────────────
 
 def _apply_docx_para_style(para, style: Dict[str, Any]) -> None:
@@ -225,6 +291,17 @@ def _apply_pptx_para_style(para, style: Dict[str, Any]) -> None:
     if not para.runs and para.text:
         para.add_run()
 
+    if style.get("alignment"):
+        align_map = {
+            "left": 1,
+            "center": 2,
+            "right": 3,
+            "justify": 4,
+        }
+        mapped = align_map.get(style.get("alignment"))
+        if mapped is not None:
+            para.alignment = mapped
+
     for run in para.runs:
         if style.get("font_name"):
             run.font.name = style["font_name"]
@@ -239,7 +316,7 @@ def _apply_pptx_para_style(para, style: Dict[str, Any]) -> None:
             run.font.color.rgb = PptRGBColor(r, g, b)
 
 
-def _apply_pptx(file_path: str, elements: List[Dict], style_map: List[Dict], output_path: str) -> None:
+def _apply_pptx(file_path: str, elements: List[Dict], style_map: List[Dict], output_path: str, brand_targets: Dict[str, Any]) -> None:
     prs = Presentation(file_path)
     style_by_id: Dict[str, Dict] = {s["id"]: s for s in style_map if "id" in s}
 
@@ -267,19 +344,31 @@ def _apply_pptx(file_path: str, elements: List[Dict], style_map: List[Dict], out
 
             shape_style = shape_style_by_locator.get((slide_idx, shape_idx))
             if shape_style and getattr(shape.text_frame, "paragraphs", None):
-                for para in shape.text_frame.paragraphs:
-                    if shape_style.get("font_size"):
-                        para.font.size = PptPt(float(shape_style["font_size"])) if hasattr(para, "font") else None
+                _apply_brand_style_to_shape(shape, shape_style, brand_targets)
 
             for para_idx, para in enumerate(shape.text_frame.paragraphs):
                 element_id = locator_to_id.get((slide_idx, shape_idx, para_idx))
                 if not element_id:
                     if shape_style and para.text.strip():
-                        _apply_pptx_para_style(para, shape_style)
+                        placeholder_type = None
+                        if getattr(shape, "is_placeholder", False):
+                            try:
+                                placeholder_type = str(shape.placeholder_format.type)
+                            except Exception:
+                                placeholder_type = "placeholder"
+                        _apply_pptx_para_style(para, _merge_with_brand_targets(shape_style, placeholder_type, brand_targets))
                     continue
                 style = style_by_id.get(element_id)
                 if style:
-                    _apply_pptx_para_style(para, style)
+                    placeholder_type = None
+                    if getattr(shape, "is_placeholder", False):
+                        try:
+                            placeholder_type = str(shape.placeholder_format.type)
+                        except Exception:
+                            placeholder_type = "placeholder"
+                    _apply_pptx_para_style(para, _merge_with_brand_targets(style, placeholder_type, brand_targets))
+
+    _preserve_text_content_against_elements(prs, elements)
 
     prs.save(output_path)
 
@@ -292,6 +381,7 @@ def apply_charter(state: PresFactoryState) -> dict:
     elements = state["anonymized_elements"]
     style_map = state["style_map"]
     primary_reference_deck = state.get("primary_reference_deck") or {}
+    brand_targets = build_brand_quality_targets(file_type)
     iteration = state.get("iteration_count", 0)
     document_title = state.get("document_title")
 
@@ -303,7 +393,7 @@ def apply_charter(state: PresFactoryState) -> dict:
         elif file_type == "docx":
             _apply_docx(file_path, elements, style_map, output_path)
         else:
-            _apply_pptx(file_path, elements, style_map, output_path)
+            _apply_pptx(file_path, elements, style_map, output_path, brand_targets)
 
         return {
             "output_path": output_path,

@@ -16,6 +16,7 @@ class PresFactoryState(TypedDict):
     # RAG context
     similar_examples: List[Dict[str, Any]]
     primary_reference_deck: Optional[Dict[str, Any]]
+    brand_context: Optional[Dict[str, Any]]
 
     # Style processing
     style_map: List[Dict[str, Any]]

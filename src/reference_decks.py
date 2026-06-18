@@ -5,6 +5,8 @@ from typing import Any
 
 from pptx import Presentation
 
+from src.brand_knowledge import get_official_template_decks
+
 
 def _tokenize(text: str) -> list[str]:
     return [token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 2]
@@ -95,8 +97,19 @@ def find_primary_reference_deck(
         return None
 
     parent = original_path.parent
+    official_template_paths = [Path(path) for path in get_official_template_decks(file_type or "")]
     candidates: list[dict[str, Any]] = []
-    for candidate_path in parent.glob("*.pptx"):
+    candidate_pool = list(parent.glob("*.pptx"))
+    for official_path in official_template_paths:
+        if official_path.exists():
+            candidate_pool.append(official_path)
+
+    seen_paths: set[str] = set()
+    for candidate_path in candidate_pool:
+        resolved = str(candidate_path.resolve())
+        if resolved in seen_paths:
+            continue
+        seen_paths.add(resolved)
         if candidate_path.resolve() == original_path.resolve():
             continue
         candidate = _collect_pptx_summary(candidate_path)
@@ -111,7 +124,9 @@ def find_primary_reference_deck(
         structured_bonus = 60 if slide_delta >= 3 else 0
         same_size_penalty = 35 if slide_delta == 0 else 0
         title_bonus = title_overlap * 30
-        score = overlap_ratio * 100 + structured_bonus + layout_bonus + title_bonus - same_size_penalty
+        is_official = candidate_path in official_template_paths
+        official_bonus = 140 if is_official else 0
+        score = overlap_ratio * 100 + structured_bonus + layout_bonus + title_bonus + official_bonus - same_size_penalty
 
         candidates.append(
             {
@@ -121,6 +136,7 @@ def find_primary_reference_deck(
                 "overlap_ratio": round(overlap_ratio, 4),
                 "score": round(score, 2),
                 "slide_delta": slide_delta,
+                "is_official_template": is_official,
             }
         )
 
@@ -148,4 +164,5 @@ def find_primary_reference_deck(
         "title_overlap": best["title_overlap"],
         "overlap_ratio": best["overlap_ratio"],
         "slide_delta": best["slide_delta"],
+        "is_official_template": best.get("is_official_template", False),
     }
