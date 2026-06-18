@@ -5,10 +5,11 @@ data/output/
 data/sharepoint_cache/
 data/brandstore/
 data/data/output/
-Tools and templates PPT - FR/
-GuidelinesFR.pdf
 **/__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .DS_Store
+Tools and templates PPT - FR/**/*.tmp
+Tools and templates PPT - FR/**/._*
+Tools and templates PPT - FR/**/~$*
