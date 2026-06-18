@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -154,6 +155,20 @@ def similarity_search(query: str, k: int = 3) -> list:
         return get_rag_store().similarity_search(query, k=k)
     except Exception:
         return []
+
+
+def extract_style_aware_exemplars(
+    file_path: Path,
+    file_type: str,
+    limit: int = 6,
+) -> list[dict[str, Any]]:
+    if limit <= 0 or not file_path.exists():
+        return []
+    if file_type == "docx":
+        return _extract_docx_style_exemplars(file_path, limit)
+    if file_type == "pptx":
+        return _extract_pptx_style_exemplars(file_path, limit)
+    return []
 
 
 def _prepare_source(force_refresh: bool, verbose: bool) -> RagSourceConfig:
@@ -614,6 +629,44 @@ def _extract_docx_text(file_path: Path) -> str:
     return "\n".join(blocks)
 
 
+def _extract_docx_style_exemplars(file_path: Path, limit: int) -> list[dict[str, Any]]:
+    try:
+        document = WordDocument(str(file_path))
+    except Exception:
+        return []
+
+    exemplars: list[dict[str, Any]] = []
+    for para_idx, paragraph in enumerate(document.paragraphs):
+        text = paragraph.text.strip()
+        if not text:
+            continue
+
+        run = next((run for run in paragraph.runs if run.text.strip()), None)
+        style_name = getattr(paragraph.style, "name", "") or "Normal"
+        elem_type, level = _docx_style_to_element_type(style_name)
+
+        exemplars.append(
+            {
+                "source_file": file_path.name,
+                "element_type": elem_type,
+                "paragraph_idx": para_idx,
+                "level": level,
+                "style_name": style_name,
+                "text_excerpt": _clip_text(text),
+                "font_name": getattr(getattr(run, "font", None), "name", None),
+                "font_size": _docx_font_size(run),
+                "bold": getattr(getattr(run, "font", None), "bold", None),
+                "italic": getattr(getattr(run, "font", None), "italic", None),
+                "color": _docx_font_color(run),
+            }
+        )
+
+        if len(exemplars) >= limit:
+            break
+
+    return exemplars
+
+
 def _extract_pptx_text(file_path: Path) -> str:
     try:
         presentation = Presentation(str(file_path))
@@ -638,6 +691,60 @@ def _extract_pptx_text(file_path: Path) -> str:
     return "\n\n".join(slides_text)
 
 
+def _extract_pptx_style_exemplars(file_path: Path, limit: int) -> list[dict[str, Any]]:
+    try:
+        presentation = Presentation(str(file_path))
+    except Exception:
+        return []
+
+    exemplars: list[dict[str, Any]] = []
+    for slide_idx, slide in enumerate(presentation.slides):
+        for shape_idx, shape in enumerate(slide.shapes):
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            placeholder_type = None
+            if getattr(shape, "is_placeholder", False):
+                try:
+                    placeholder_type = str(shape.placeholder_format.type)
+                except Exception:
+                    placeholder_type = "placeholder"
+            geometry_bucket = _shape_geometry_bucket(shape)
+            for para_idx, para in enumerate(shape.text_frame.paragraphs):
+                text = para.text.strip()
+                if not text:
+                    continue
+
+                run = next((run for run in para.runs if run.text.strip()), None)
+                exemplars.append(
+                    {
+                        "source_file": file_path.name,
+                        "element_type": _pptx_style_to_element_type(
+                            slide_idx=slide_idx,
+                            shape_idx=shape_idx,
+                            para_level=getattr(para, "level", 0),
+                        ),
+                        "slide_idx": slide_idx,
+                        "shape_idx": shape_idx,
+                        "para_idx": para_idx,
+                        "level": getattr(para, "level", 0),
+                        "placeholder_type": placeholder_type,
+                        "shape_name": getattr(shape, "name", None),
+                        "geometry_bucket": geometry_bucket,
+                        "text_excerpt": _clip_text(text),
+                        "font_name": getattr(getattr(run, "font", None), "name", None),
+                        "font_size": _pptx_font_size(run),
+                        "bold": getattr(getattr(run, "font", None), "bold", None),
+                        "italic": getattr(getattr(run, "font", None), "italic", None),
+                        "color": _pptx_font_color(run),
+                    }
+                )
+
+                if len(exemplars) >= limit:
+                    return exemplars
+
+    return exemplars
+
+
 def _extract_text_file(file_path: Path) -> str:
     data = file_path.read_bytes()
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
@@ -646,6 +753,84 @@ def _extract_text_file(file_path: Path) -> str:
         except UnicodeDecodeError:
             continue
     return data.decode("utf-8", errors="ignore")
+
+
+def _docx_style_to_element_type(style_name: str) -> tuple[str, int]:
+    normalized = style_name.lower()
+    if "heading 1" in normalized:
+        return "heading_1", 1
+    if "heading 2" in normalized:
+        return "heading_2", 2
+    if "heading 3" in normalized:
+        return "heading_3", 3
+    if any(token in normalized for token in ("list", "bullet", "liste")):
+        return "bullet", 1
+    if "caption" in normalized or "légende" in normalized:
+        return "caption", 0
+    return "body", 0
+
+
+def _pptx_style_to_element_type(slide_idx: int, shape_idx: int, para_level: int) -> str:
+    if slide_idx == 0 and shape_idx == 0:
+        return "title"
+    if para_level == 0:
+        return "heading" if shape_idx == 0 else "body"
+    if para_level == 1:
+        return "bullet_level_1"
+    return "bullet_level_2"
+
+
+def _shape_geometry_bucket(shape) -> str:
+    try:
+        left = int(shape.left)
+        top = int(shape.top)
+        width = int(shape.width)
+        height = int(shape.height)
+    except Exception:
+        return ""
+
+    horizontal = "left" if left < 2000000 else ("right" if left > 5000000 else "center")
+    vertical = "top" if top < 1200000 else ("bottom" if top > 3000000 else "middle")
+    size = "large" if width > 5000000 or height > 1200000 else "small"
+    return f"{vertical}_{horizontal}_{size}"
+
+
+def _clip_text(text: str, max_len: int = 160) -> str:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if len(compact) <= max_len:
+        return compact
+    return f"{compact[: max_len - 1].rstrip()}…"
+
+
+def _docx_font_size(run) -> Optional[float]:
+    size = getattr(getattr(run, "font", None), "size", None)
+    return round(float(size.pt), 2) if size is not None else None
+
+
+def _pptx_font_size(run) -> Optional[float]:
+    size = getattr(getattr(run, "font", None), "size", None)
+    return round(float(size.pt), 2) if size is not None else None
+
+
+def _docx_font_color(run) -> Optional[str]:
+    color = getattr(getattr(getattr(run, "font", None), "color", None), "rgb", None)
+    if color is None:
+        return None
+    return _rgb_to_hex(color)
+
+
+def _pptx_font_color(run) -> Optional[str]:
+    color = getattr(getattr(getattr(run, "font", None), "color", None), "rgb", None)
+    if color is None:
+        return None
+    return _rgb_to_hex(color)
+
+
+def _rgb_to_hex(value: Any) -> Optional[str]:
+    try:
+        return f"#{str(value)}"
+    except Exception:
+        return None
 
 
 def _build_empty_store(config: RagSourceConfig) -> Chroma:

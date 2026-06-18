@@ -5,14 +5,17 @@ from langgraph.graph.message import add_messages
 class PresFactoryState(TypedDict):
     # Input
     file_path: str
+    original_file_path: Optional[str]
     file_type: Optional[Literal["docx", "pptx"]]
 
     # Parsed content (indexed — ordre document préservé)
     raw_elements: List[Dict[str, Any]]
     anonymized_elements: List[Dict[str, Any]]
+    document_title: Optional[str]
 
     # RAG context
     similar_examples: List[Dict[str, Any]]
+    primary_reference_deck: Optional[Dict[str, Any]]
 
     # Style processing
     style_map: List[Dict[str, Any]]

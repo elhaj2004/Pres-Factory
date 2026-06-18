@@ -48,10 +48,13 @@ CSS = f"""
 def _initial_state(file_path: str) -> dict:
     return {
         "file_path": file_path,
+        "original_file_path": file_path,
         "file_type": None,
         "raw_elements": [],
         "anonymized_elements": [],
+        "document_title": None,
         "similar_examples": [],
+        "primary_reference_deck": None,
         "style_map": [],
         "output_path": None,
         "quality_score": None,
@@ -107,9 +110,9 @@ def _resume_graph(config: dict) -> dict:
 
 # ── Callbacks Gradio ──────────────────────────────────────────────────────────
 
-def cb_process(file_obj, progress=gr.Progress(track_tqdm=True)):
+def cb_process(file_path, progress=gr.Progress(track_tqdm=True)):
     """Étape 1 : upload + traitement jusqu'au garde-fou."""
-    if file_obj is None:
+    if not file_path:
         return (
             gr.update(),               # thread_id_state
             "⚠️ Aucun fichier sélectionné.",  # status
@@ -120,9 +123,10 @@ def cb_process(file_obj, progress=gr.Progress(track_tqdm=True)):
         )
 
     thread_id = str(uuid.uuid4())
-    ext = Path(file_obj.name).suffix
+    source_path = Path(file_path)
+    ext = source_path.suffix
     dest = UPLOAD_DIR / f"{thread_id}{ext}"
-    shutil.copy(file_obj.name, str(dest))
+    shutil.copy(str(source_path), str(dest))
 
     config = {"configurable": {"thread_id": thread_id}}
     _sessions[thread_id] = config
@@ -232,7 +236,11 @@ def cb_reject(thread_id, feedback):
 # ── Layout ────────────────────────────────────────────────────────────────────
 
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="Pres Factory — OCD") as demo:
+    with gr.Blocks(
+        title="Pres Factory — OCD",
+        theme=gr.themes.Base(),
+        css=CSS,
+    ) as demo:
 
         gr.HTML("""
         <div id="header">
@@ -331,6 +339,4 @@ if __name__ == "__main__":
         server_port=7860,
         share=False,
         show_error=True,
-        theme=gr.themes.Base(),
-        css=CSS,
     )

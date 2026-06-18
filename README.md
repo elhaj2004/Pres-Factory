@@ -117,14 +117,14 @@ Editer `.env` :
 LLM_PROVIDER=dinootoo
 OPENAI_COMPAT_API_KEY=<votre_cle>
 OPENAI_COMPAT_BASE_URL=https://llmproxy.ai.orange
-OPENAI_COMPAT_MODEL=gpt-4o
-OPENAI_COMPAT_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_COMPAT_MODEL=openai/gpt-4o
+OPENAI_COMPAT_EMBEDDING_MODEL=openai/text-embedding-3-small
 
 # --- Variables historiques conservees pour compatibilite ---
 DINOOTOO_API_KEY=<votre_cle>
 DINOOTOO_BASE_URL=https://llmproxy.ai.orange
-DINOOTOO_MODEL=gpt-4o
-DINOOTOO_EMBEDDING_MODEL=text-embedding-3-small
+DINOOTOO_MODEL=openai/gpt-4o
+DINOOTOO_EMBEDDING_MODEL=openai/text-embedding-3-small
 
 # --- OU Anthropic ---
 # LLM_PROVIDER=anthropic
@@ -154,8 +154,8 @@ QUALITY_THRESHOLD=70    # score minimum avant human review (sinon retry auto)
 MAX_ITERATIONS=3        # nb max d'itérations automatiques
 
 # --- LangSmith (optionnel, pour tracer les runs) ---
-# LANGCHAIN_TRACING_V2=true
-# LANGCHAIN_API_KEY=<votre_clé_langsmith>
+# LANGCHAIN_TRACING_V2=false
+# LANGCHAIN_API_KEY=
 # LANGCHAIN_PROJECT=pres-factory
 ```
 
