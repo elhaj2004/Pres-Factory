@@ -11,3 +11,5 @@ python-dotenv>=1.0.0
 Pillow>=10.0.0
 docx2txt>=0.8
 sentence-transformers>=2.2.0
+requests>=2.31.0
+msal>=1.30.0

@@ -48,7 +48,16 @@ Approuvé   Rejeté + feedback
 
 ### RAG — BrandStore
 
-Les documents de référence `.docx` placés dans `data/brandstore/` sont indexés dans **ChromaDB** (local). Lors du mapping de styles, l'agent récupère les 3 exemples les plus similaires pour guider le LLM.
+Le BrandStore supporte maintenant deux sources configurables via `RAG_SOURCE` :
+
+| Mode | Variable `RAG_SOURCE` | Fonctionnement |
+|---|---|---|
+| **Local** | `local` | Lit les fichiers de référence depuis `data/brandstore/` |
+| **SharePoint** | `sharepoint` | Synchronise incrémentalement un dossier SharePoint vers `data/sharepoint_cache/`, puis indexe localement dans Chroma |
+
+Les types de fichiers indexables sont `.docx`, `.pptx`, `.txt` et `.md`. Les autres types sont ignores proprement.
+
+Lors du mapping de styles, l'agent récupère les 3 exemples les plus similaires avec `similarity_search(query, k=3)` sans changer l'interface metier existante.
 
 ---
 
@@ -57,7 +66,8 @@ Les documents de référence `.docx` placés dans `data/brandstore/` sont index�
 ### Prérequis
 
 - Python 3.10+
-- Un accès à l'API Dinootoo **ou** une clé Anthropic
+- Un acces a l'API LLM Proxy Orange/OpenAI-compatible ou une cle Anthropic
+- Pour le mode SharePoint: une application Microsoft Entra ID avec permissions Graph en client credentials
 
 ### 1. Cloner et entrer dans le projet
 
@@ -100,12 +110,19 @@ pip install sentence-transformers
 cp .env.example .env
 ```
 
-Éditer `.env` :
+Editer `.env` :
 
 ```env
-# --- Provider principal (Dinootoo, API interne OCD) ---
-DINOOTOO_API_KEY=<votre_clé>
-DINOOTOO_BASE_URL=https://<endpoint-dinootoo>/v1
+# --- Provider principal (LLM Proxy Orange, OpenAI-compatible) ---
+LLM_PROVIDER=dinootoo
+OPENAI_COMPAT_API_KEY=<votre_cle>
+OPENAI_COMPAT_BASE_URL=https://llmproxy.ai.orange
+OPENAI_COMPAT_MODEL=gpt-4o
+OPENAI_COMPAT_EMBEDDING_MODEL=text-embedding-3-small
+
+# --- Variables historiques conservees pour compatibilite ---
+DINOOTOO_API_KEY=<votre_cle>
+DINOOTOO_BASE_URL=https://llmproxy.ai.orange
 DINOOTOO_MODEL=gpt-4o
 DINOOTOO_EMBEDDING_MODEL=text-embedding-3-small
 
@@ -117,6 +134,20 @@ DINOOTOO_EMBEDDING_MODEL=text-embedding-3-small
 # --- Embeddings locaux (si pas d'API embeddings) ---
 # USE_LOCAL_EMBEDDINGS=true
 # LOCAL_EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+
+# --- RAG local ou SharePoint ---
+RAG_SOURCE=local
+BRANDSTORE_DIR=data/brandstore
+
+# --- SharePoint / Microsoft Graph ---
+# Le SharePoint OCD ci-dessous est preconfigure par defaut dans .env local.
+SHAREPOINT_FOLDER_URL=https://orangecyberdefense.sharepoint.com/sites/directionExpertise/Documents%20partages/Forms/AllItems.aspx
+SHAREPOINT_SITE_URL=https://orangecyberdefense.sharepoint.com/sites/directionExpertise
+SHAREPOINT_DOCUMENT_LIBRARY=Documents partages
+SHAREPOINT_FOLDER_PATH=
+SHAREPOINT_TENANT_ID=<tenant_id>
+SHAREPOINT_CLIENT_ID=<client_id>
+SHAREPOINT_CLIENT_SECRET=<client_secret>
 
 # --- Qualité ---
 QUALITY_THRESHOLD=70    # score minimum avant human review (sinon retry auto)
@@ -143,11 +174,13 @@ L'interface est disponible sur **http://localhost:7860**
 
 ---
 
-## (Optionnel) Indexer le BrandStore
+## Indexer le BrandStore
 
-Le BrandStore est la base de documents OCD de référence utilisée par le RAG. Si elle est vide, l'agent fonctionne quand même mais sans exemples de contexte.
+Le BrandStore est la base de documents OCD de reference utilisee par le RAG. Si elle est vide, l'agent fonctionne quand meme mais sans exemples de contexte.
 
-1. Placer des fichiers `.docx` de référence (documents OCD validés) dans `data/brandstore/`
+### Mode local
+
+1. Placer des fichiers `.docx`, `.pptx`, `.txt` ou `.md` de reference dans `data/brandstore/`
 2. Lancer l'indexation :
 
 ```bash
@@ -155,7 +188,45 @@ source .venv/bin/activate
 python scripts/index_brandstore.py
 ```
 
-L'index ChromaDB est persisté dans `data/chroma_db/` — l'indexation n'est à refaire que si de nouveaux documents sont ajoutés.
+### Mode SharePoint
+
+Configurer :
+
+```env
+RAG_SOURCE=sharepoint
+SHAREPOINT_FOLDER_URL=https://orangecyberdefense.sharepoint.com/sites/directionExpertise/Documents%20partages/Forms/AllItems.aspx
+SHAREPOINT_SITE_URL=https://orangecyberdefense.sharepoint.com/sites/directionExpertise
+SHAREPOINT_DOCUMENT_LIBRARY=Documents partages
+SHAREPOINT_FOLDER_PATH=
+SHAREPOINT_TENANT_ID=<tenant_id>
+SHAREPOINT_CLIENT_ID=<client_id>
+SHAREPOINT_CLIENT_SECRET=<client_secret>
+```
+
+Puis lancer :
+
+```bash
+source .venv/bin/activate
+python scripts/index_brandstore.py
+```
+
+Pour forcer une resynchronisation SharePoint complete avant reindexation :
+
+```bash
+python scripts/index_brandstore.py --force-refresh
+```
+
+Comportement du connecteur SharePoint :
+
+1. Authentification Microsoft Graph en client credentials via `msal`
+2. Resolution dynamique du site, de la bibliotheque et du dossier SharePoint
+3. Synchronisation incrementale vers `data/sharepoint_cache/<source>/files/`
+4. Suppression locale des fichiers retires du SharePoint
+5. Conservation d'un `manifest.json` pour detecter les deltas
+6. Indexation locale dans Chroma avec collection et dossier de persistance specifiques a la source
+7. En cas d'echec Graph, reutilisation du cache local deja synchronise si present
+
+L'index ChromaDB est persiste dans `data/chroma_db/<source>/`. Cela evite les collisions entre plusieurs sources RAG.
 
 ---
 
@@ -197,9 +268,10 @@ Pres-Factory/
 ├── scripts/
 │   └── index_brandstore.py     # Script d'indexation du BrandStore
 ├── data/
-│   ├── brandstore/             # Documents OCD de référence à placer ici
+│   ├── brandstore/             # Documents OCD de reference (mode local)
+│   ├── sharepoint_cache/       # Cache synchronise SharePoint + manifest
 │   ├── uploads/                # Fichiers uploadés (généré automatiquement)
-│   ├── chroma_db/              # Index vectoriel ChromaDB (généré automatiquement)
+│   ├── chroma_db/              # Index vectoriel ChromaDB par source (genere automatiquement)
 │   └── output/                 # Documents traités en sortie (généré automatiquement)
 ├── requirements.txt
 ├── .env.example
@@ -214,6 +286,20 @@ La charte est définie dans `src/charter/ocd_charter.json`. Pour l'ajuster (nouv
 
 ---
 
-## Évolution vers RAG SharePoint
+## Permissions Microsoft Graph attendues
 
-Remplacer `src/rag/store.py` par un connecteur SharePoint/Microsoft Graph. L'interface `get_rag_store()` et `similarity_search()` reste identique — aucune autre modification requise.
+Le mode SharePoint attend une application Entra ID avec des permissions applicatives adaptees, typiquement :
+
+- `Sites.Read.All`
+- `Files.Read.All`
+
+Un consentement administrateur est generalement necessaire.
+
+## Config locale predefinie
+
+Le depot peut utiliser un `.env` local gitignore avec :
+
+- la cle API utilisateur pour `https://llmproxy.ai.orange`
+- le SharePoint OCD `https://orangecyberdefense.sharepoint.com/sites/directionExpertise/Documents%20partages/Forms/AllItems.aspx`
+
+Les credentials Graph restent a renseigner pour activer la synchronisation SharePoint distante. Sans eux, le code echoue proprement et peut reutiliser un cache local deja synchronise.
